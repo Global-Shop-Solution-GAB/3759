@@ -1,0 +1,148 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Coded by: JLH
+'Project Start Date: 6/3/2011
+'Hooks:
+'  11870
+'  11872
+'Notes:
+'   GAB script will need to run off the Pre-Save Hook on the Order Header (11870) to record the current Due Date saved in the ORDER_HEADER table in a temporary textfile or table.
+'On the Post-Save Hook (11872), it will check to see if Due Date has changed, and whether there are any records in ORDER_TO_WO for the selected order.  If both conditions apply,
+'it will display a message box (as described in the description).  If the user selects Yes to update Work Orders, the script will update DATE_DUE in JOB_HEADER for ever WO in ORDER_TO_WO
+
+F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+F.Intrinsic.Control.CallSub(Load)
+
+Program.Sub.Main.End
+
+Program.Sub.PreSave.Start
+V.Local.sError.Declare(String)
+V.Local.sQuery.Declare(String)
+V.Local.sOrder.Declare(String)
+V.Local.sText.Declare(String)
+V.Local.sFile.Declare(String)
+
+F.Intrinsic.Control.SetErrorHandler("Create_Error")
+
+V.Local.sOrder.Set(V.Passed.000003)
+F.Intrinsic.String.Concat("Select top 1 DATE_DUE from ORDER_HEADER where RECORD_TYPE='A'  AND ORDER_NO LIKE'%",V.Local.sOrder,"'",V.Local.sQuery)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sQuery)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	V.Local.sText.Set(V.ODBC.conx!rst.FieldVal!DATE_DUE)
+	F.Intrinsic.String.Concat(V.Caller.TempDir,"\date_temp",V.Caller.Terminal,".txt",V.Local.sFile)
+	F.Intrinsic.File.String2File(V.Local.sFile,V.Local.sText)
+F.Intrinsic.Control.EndIf
+F.ODBC.conx!rst.Close
+
+F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.Label("Create_Error")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Concat("Error Occured",V.Ambient.ErrorDescription,V.local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+F.Intrinsic.Control.EndIf
+
+Program.Sub.PreSave.End
+
+Program.Sub.Load.Start
+V.Local.sError.Declare(String)
+V.Local.sHook.Declare(String)
+
+F.Intrinsic.Control.SetErrorHandler("Create_Error")
+
+'F.Intrinsic.Debug.InvokeDebugger
+'
+
+V.Local.sHook.Set(V.Caller.Hook)
+F.Intrinsic.Control.If(V.Local.sHook,=,"11870")
+	F.Intrinsic.Control.CallSub(Presave)
+F.Intrinsic.Control.Else
+	F.Intrinsic.Control.CallSub(Postsave)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.Label("Create_Error")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Concat("Error Occured",V.Ambient.ErrorDescription,V.local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+F.Intrinsic.Control.EndIf
+
+Program.Sub.Load.End
+
+Program.Sub.Postsave.Start
+V.Local.sError.Declare(String)
+V.Local.sQuery.Declare(String)
+V.Local.sDate.Declare(String)
+V.Local.bExists.Declare(Boolean)
+V.Local.sOrder.Declare(String)
+V.Local.sComp.Declare(String)
+V.Local.sFile.Declare(String)
+V.Local.sRet.Declare(String)
+V.Local.sParam.Declare(String)
+
+F.Intrinsic.Control.SetErrorHandler("Create_Error")
+
+V.Local.sOrder.Set(V.Passed.000003)
+F.Intrinsic.String.Concat(V.caller.TempDir,"\date_temp",V.Caller.Terminal,".txt",V.Local.sFile)
+F.Intrinsic.File.Exists(V.Local.sFile,V.Local.bExists)
+F.Intrinsic.Control.If(V.Local.bExists,=,True)
+	F.Intrinsic.File.File2String(V.Local.sFile,V.Local.sDate)
+	F.Intrinsic.String.Split(V.Local.sDate,V.Ambient.NewLine,V.Local.sDate)
+	V.Local.sDate.Set(V.Local.sDate(0))
+	F.Intrinsic.String.Concat("Select DATE_DUE from ORDER_HEADER where RECORD_TYPE='A' AND ORDER_NO like '%",V.Local.sOrder,"'",V.Local.sQuery)
+	F.ODBC.Connection!conx.OpenRecordsetRO("rstComp",V.Local.sQuery)
+	F.Intrinsic.Control.If(V.ODBC.conx!rstComp.EOF,=,False)
+		V.Local.sComp.Set(V.ODBC.conx!rstComp.FieldVal!DATE_DUE)
+		F.Intrinsic.Control.If(V.Local.sDate.Trim,<>,V.local.sComp)
+			F.Intrinsic.String.Concat("Select * from ORDER_TO_WO where ORDER_NO like'%",V.local.sOrder,"'",V.Local.sQuery)
+			F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sQuery)
+			F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+				F.Intrinsic.UI.Msgbox("Would you like to update Due Date on all associated Work Orders?",,4,V.Local.sRet)
+				F.Intrinsic.Control.If(V.Local.sRet,=,"6")
+					F.Intrinsic.String.Concat("Select * from JOB_HEADER where JOB IN (Select JOB from ORDER_TO_WO where ORDER_NO like'%",V.Local.sOrder,"')",V.Local.sQuery)
+					F.ODBC.Connection!conx.OpenRecordsetRW("rstD",V.Local.sQuery)
+					F.Intrinsic.Control.DoUntil(V.ODBC.conx!rstD.EOF,=,True)
+						F.ODBC.conx!rstD.Set!DATE_DUE(V.local.sComp)
+						F.ODBC.conx!rstD.Update
+							'backschedule the job for which the due date was updated
+'F.Intrinsic.Debug.InvokeDebugger
+'F.Intrinsic.Debug.Stop
+							F.Intrinsic.String.Concat(V.ODBC.conX!rstD.FieldValTrim!Date_Opened,"!*!",V.ODBC.conX!rstD.FieldValTrim!Date_Due,"!*!",V.ODBC.conX!rstD.FieldValTrim!Job,"!*!",V.ODBC.conX!rstD.FieldValTrim!Suffix,"!*!!*!","B",V.Local.sParam)
+'F.Intrinsic.Debug.CallWrapperDebugEnable
+							F.Global.General.CallWrapperSync("500030",V.Local.sParam)
+						F.ODBC.conx!rstD.MoveNext
+					F.Intrinsic.Control.Loop
+					F.ODBC.conx!rstD.Close
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+			F.ODBC.conx!rst.Close
+		F.Intrinsic.Control.EndIf
+		F.ODBC.conx!rstComp.close
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.File.DeleteFile(V.Local.sFile)
+F.Intrinsic.Control.EndIf
+
+
+F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.Label("Create_Error")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Concat("Error Occured",V.Ambient.ErrorDescription,V.local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+F.Intrinsic.Control.EndIf
+
+Program.Sub.Postsave.End
+
+Program.Sub.Comments.Start
+${$0$}$ATG_3759_Sales_Order_Due_Date$}$JCT$}$4/8/2016
+${$1$}$$}$$}$1$}$11872$}$Post-Save Hook$}$4/8/2016 4:14:10 PM$}$(Program: ORD200; Screen: OES0200A)
+
+${$1$}$$}$$}$0$}$11870$}$Pre-Save Hook$}$4/8/2016 4:13:49 PM$}$(Program: ORD200; Screen: OES0200A)
+
+Program.Sub.Comments.End
+
